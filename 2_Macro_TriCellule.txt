@@ -1,0 +1,195 @@
+Option Explicit
+
+' === Fonction NomCouleur ===
+Function NomCouleur(colVal As Long) As String
+    Dim c As Long
+    c = CLng(colVal)
+    Select Case c
+        Case 0: NomCouleur = "NOIR"
+        Case 13813120: NomCouleur = "BEIGE"
+        Case 10914635: NomCouleur = "MARRON CLAIR"
+        Case 8468233: NomCouleur = "MARRON FONCE"
+        Case 8508442: NomCouleur = "VERT CLAIR"
+        Case 26112: NomCouleur = "VERT FONCE"
+        Case 7512015: NomCouleur = "BLEU CLAIR"
+        Case 3433892: NomCouleur = "BLEU FONCE"
+        Case 6558823: NomCouleur = "VIOLET"
+        Case 15371918: NomCouleur = "ROSE"
+        Case 16757518: NomCouleur = "ORANGE"
+        Case 13369344: NomCouleur = "ROUGE"
+        Case 16187136: NomCouleur = "JAUNE"
+        Case 16777215: NomCouleur = "BLANC"
+        Case Else: NomCouleur = "Inconnu"
+    End Select
+End Function
+
+' === Macro principale : regroupement couleurs / coordonnées ===
+Sub RegrouperCoordonneesParCouleur()
+    Dim oDoc As Object, oSel As Object, oSheets As Object, oResultSheet As Object
+    Dim oCell As Object
+    Dim s As String
+    Dim colorVal As Long
+    Dim cols() As Long, coordsStr() As String
+    Dim nbColors As Long
+    Dim colIndex As Long, rowIndex As Long, i As Long, j As Long, k As Long
+    Dim items As Variant, item As String
+
+    oDoc = ThisComponent
+    oSel = oDoc.CurrentSelection
+    If Not oSel.supportsService("com.sun.star.sheet.SheetCellRange") Then
+        MsgBox "Sélectionnez une plage de cellules dans Calc."
+        Exit Sub
+    End If
+    oSheets = oDoc.Sheets
+
+    ' --- collecter les coordonnées par couleur ---
+    nbColors = -1
+    For colIndex = 0 To oSel.Columns.Count - 1
+        For rowIndex = 0 To oSel.Rows.Count - 1
+            oCell = oSel.getCellByPosition(colIndex, rowIndex)
+            s = Trim(oCell.String)
+            colorVal = oCell.CellBackColor
+            If colorVal = -1 Then colorVal = 16777215 ' fond vide → blanc
+
+            If s <> "" Then
+                Dim idx As Long
+                idx = -1
+                For k = 0 To nbColors
+                    If cols(k) = colorVal Then
+                        idx = k
+                        Exit For
+                    End If
+                Next k
+                If idx = -1 Then
+                    nbColors = nbColors + 1
+                    ReDim Preserve cols(nbColors)
+                    ReDim Preserve coordsStr(nbColors)
+                    cols(nbColors) = colorVal
+                    coordsStr(nbColors) = ""
+                    idx = nbColors
+                End If
+                items = Split(s, Chr(9)) ' diviser par tabulations
+                For k = 0 To UBound(items)
+                    item = Trim(items(k))
+                    If item <> "" Then
+                        If coordsStr(idx) = "" Then
+                            coordsStr(idx) = item
+                        Else
+                            coordsStr(idx) = coordsStr(idx) & Chr(31) & item
+                        End If
+                    End If
+                Next k
+            End If
+        Next rowIndex
+    Next colIndex
+
+    If nbColors = -1 Then
+        MsgBox "Aucune coordonnée trouvée."
+        Exit Sub
+    End If
+
+    ' --- préparer résultats ---
+    Dim formatted() As String
+    ReDim formatted(nbColors)
+    Dim minX() As Long, minY() As Long
+    ReDim minX(nbColors)
+    ReDim minY(nbColors)
+
+    For i = 0 To nbColors
+        Dim coordsArr As Variant
+        coordsArr = Split(coordsStr(i), Chr(31))
+        coordsArr = TrierCoordonnees(coordsArr)
+
+        Dim firstXY As Variant
+        firstXY = ExtraireXY(coordsArr(0))
+        minX(i) = CLng(firstXY(0))
+        minY(i) = CLng(firstXY(1))
+
+        Dim res As String, cnt As Long
+        res = ""
+        cnt = 0
+        For j = LBound(coordsArr) To UBound(coordsArr)
+            res = res & coordsArr(j)
+            cnt = cnt + 1
+            If cnt = 5 And j < UBound(coordsArr) Then
+                res = res & Chr(10)
+                cnt = 0
+            ElseIf j < UBound(coordsArr) Then
+                res = res & "   "
+            End If
+        Next j
+        formatted(i) = res
+    Next i
+
+    ' --- trier couleurs par minY puis minX ---
+    Dim tmpLong As Long, tmpStr As String
+    Dim a As Long, b As Long
+    For a = 0 To nbColors - 1
+        For b = a + 1 To nbColors
+            If (minY(a) > minY(b)) Or (minY(a) = minY(b) And minX(a) > minX(b)) Then
+                tmpLong = cols(a): cols(a) = cols(b): cols(b) = tmpLong
+                tmpStr = formatted(a): formatted(a) = formatted(b): formatted(b) = tmpStr
+                tmpLong = minX(a): minX(a) = minX(b): minX(b) = tmpLong
+                tmpLong = minY(a): minY(a) = minY(b): minY(b) = tmpLong
+            End If
+        Next b
+    Next a
+
+    ' --- feuille résultat ---
+    If oSheets.hasByName("Regroupement") Then oSheets.removeByName("Regroupement")
+    oSheets.insertNewByName("Regroupement", oSheets.getCount())
+    oResultSheet = oSheets.getByName("Regroupement")
+
+    ' largeur colonnes
+    oResultSheet.Columns.getByIndex(0).Width = 4000 ' col A = couleur
+    oResultSheet.Columns.getByIndex(1).Width = 8000 ' col B = coordonnées
+
+    ' --- écriture des résultats ---
+    For i = 0 To nbColors
+        ' Col A = nom de la couleur
+        oCell = oResultSheet.getCellByPosition(0, i)
+        oCell.String = NomCouleur(CLng(cols(i)))  ' <- conversion forcée
+        oCell.CellBackColor = cols(i)
+        oCell.HoriJustify = com.sun.star.table.CellHoriJustify.CENTER
+        oCell.VertJustify = com.sun.star.table.CellVertJustify.CENTER
+
+        ' Col B = coordonnées
+        oCell = oResultSheet.getCellByPosition(1, i)
+        oCell.String = formatted(i)
+        oCell.IsTextWrapped = True
+        oCell.CharHeight = 6
+        oCell.HoriJustify = com.sun.star.table.CellHoriJustify.CENTER
+        oCell.VertJustify = com.sun.star.table.CellVertJustify.CENTER
+    Next i
+
+End Sub
+
+' === Fonctions utilitaires ===
+Function TrierCoordonnees(coords) As Variant
+    Dim i As Long, j As Long, tmp As Variant
+    Dim xy1 As Variant, xy2 As Variant
+    For i = LBound(coords) To UBound(coords) - 1
+        For j = i + 1 To UBound(coords)
+            xy1 = ExtraireXY(coords(i))
+            xy2 = ExtraireXY(coords(j))
+            If CLng(xy1(1)) > CLng(xy2(1)) Or _
+               (CLng(xy1(1)) = CLng(xy2(1)) And CLng(xy1(0)) > CLng(xy2(0))) Then
+                tmp = coords(i)
+                coords(i) = coords(j)
+                coords(j) = tmp
+            End If
+        Next j
+    Next i
+    TrierCoordonnees = coords
+End Function
+
+Function ExtraireXY(coord As String) As Variant
+    Dim s As String, parts As Variant, res(1) As Long
+    s = Replace(coord, "(", "")
+    s = Replace(s, ")", "")
+    s = Replace(s, " ", "")
+    parts = Split(s, ";")
+    res(0) = CLng(parts(0))
+    res(1) = CLng(parts(1))
+    ExtraireXY = res
+End Function

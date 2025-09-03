@@ -1,0 +1,75 @@
+Option Explicit
+
+Sub GenererDictionnaireCouleurs_SelectCase()
+    Dim oDoc As Object, oSel As Object, oCell As Object
+    Dim colVal As Long
+    Dim i As Long, j As Long, k As Long
+    Dim nbColors As Long
+    Dim colorKeys() As Long, colorNames() As String
+    Dim nomCouleur As String
+    Dim found As Boolean
+    Dim dictText As String
+
+    oDoc = ThisComponent
+    oSel = oDoc.CurrentSelection
+    If Not oSel.supportsService("com.sun.star.sheet.SheetCellRange") Then
+        MsgBox "Sélectionnez une plage de cellules."
+        Exit Sub
+    End If
+
+    nbColors = -1
+
+    ' --- parcourir toutes les cellules ---
+    For i = 0 To oSel.Columns.Count - 1
+        For j = 0 To oSel.Rows.Count - 1
+            oCell = oSel.getCellByPosition(i, j)
+            colVal = oCell.CellBackColor
+
+            ' traiter fond vide comme blanc
+            If colVal = -1 Then colVal = 16777215
+
+            ' vérifier si déjà enregistré
+            found = False
+            For k = 0 To nbColors
+                If colorKeys(k) = colVal Then
+                    found = True
+                    Exit For
+                End If
+            Next k
+
+            ' si nouvelle couleur
+            If Not found Then
+                nbColors = nbColors + 1
+                ReDim Preserve colorKeys(nbColors)
+                ReDim Preserve colorNames(nbColors)
+                colorKeys(nbColors) = colVal
+
+                ' blanc automatique
+                If colVal = 16777215 Then
+                    nomCouleur = "BLANC"
+                Else
+                    nomCouleur = InputBox("Entrez le nom pour la couleur RGB " & colVal & " :", "Nom de la couleur")
+                    If nomCouleur = "" Then nomCouleur = "Inconnu"
+                End If
+
+                colorNames(nbColors) = nomCouleur
+            End If
+        Next j
+    Next i
+
+    ' --- générer code de la fonction NomCouleur ---
+    dictText = "Function NomCouleur(colVal As Long) As String" & Chr(10)
+    dictText = dictText & "    Dim c As Long" & Chr(10)
+    dictText = dictText & "    c = CLng(colVal)" & Chr(10)
+    dictText = dictText & "    Select Case c" & Chr(10)
+
+    For k = 0 To nbColors
+        dictText = dictText & "        Case " & colorKeys(k) & ": NomCouleur = """ & colorNames(k) & """" & Chr(10)
+    Next k
+
+    dictText = dictText & "        Case Else: NomCouleur = ""Inconnu""" & Chr(10)
+    dictText = dictText & "    End Select" & Chr(10)
+    dictText = dictText & "End Function" & Chr(10)
+
+    MsgBox "Copiez le code suivant dans votre module :" & Chr(10) & Chr(10) & dictText
+End Sub

@@ -1,0 +1,73 @@
+Sub CopierPlageCalcVersWriter_InterlignesFiable()
+    Dim oDocWriter As Object
+    Dim oTable As Object
+    Dim oCalc As Object
+    Dim oSelCalc As Object
+    Dim nRows As Long, nCols As Long
+    Dim i As Long, j As Long
+    Dim oCellCalc As Object, oCellWriter As Object
+    Dim colOffset As Long, rowOffset As Long
+    Dim lignes() As String
+    Dim oText As Object
+    Dim oEnum As Object
+    Dim p As Object
+    Dim pIndex As Long, nPara As Long
+
+    colOffset = 0
+    rowOffset = 1
+
+    oDocWriter = ThisComponent
+    oTable = oDocWriter.CurrentController.getViewCursor().TextTable
+    If oTable Is Nothing Then
+        MsgBox "Placez le curseur dans le tableau Writer cible.", 48, "Erreur"
+        Exit Sub
+    End If
+
+    ' --- Chercher Calc actif ---
+    Dim oComponents As Object, oComponentsEnum As Object
+    oComponents = StarDesktop.Components
+    oComponentsEnum = oComponents.createEnumeration()
+    oCalc = Nothing
+    Do While oComponentsEnum.hasMoreElements()
+        oCalc = oComponentsEnum.nextElement()
+        If oCalc.SupportsService("com.sun.star.sheet.SpreadsheetDocument") Then Exit Do
+    Loop
+    If oCalc Is Nothing Then
+        MsgBox "Aucun document Calc actif trouvé.", 48, "Erreur"
+        Exit Sub
+    End If
+
+    oSelCalc = oCalc.CurrentSelection
+    If oSelCalc Is Nothing Or Not oSelCalc.SupportsService("com.sun.star.sheet.SheetCellRange") Then
+        MsgBox "Sélectionnez une plage valide dans Calc.", 48, "Erreur"
+        Exit Sub
+    End If
+
+    nRows = oSelCalc.Rows.getCount()
+    nCols = oSelCalc.Columns.getCount()
+
+    For i = 0 To nRows - 1
+        For j = 0 To nCols - 1
+            oCellCalc = oSelCalc.getCellByPosition(j, i)
+            If (i + rowOffset) < oTable.Rows.getCount() And (j + colOffset) < oTable.Columns.getCount() Then
+                oCellWriter = oTable.getCellByPosition(j + colOffset, i + rowOffset)
+
+                ' --- Texte avec vrais paragraphes ---
+                lignes = Split(oCellCalc.getString(), Chr(10))
+                oCellWriter.getText().setString(Join(lignes, Chr(13)))
+
+                oText = oCellWriter.getText()
+
+                ' --- compter le nombre de paragraphes réels ---
+                oEnum = oText.createEnumeration()
+                nPara = 0
+                Do While oEnum.hasMoreElements()
+                    p = oEnum.nextElement()
+                    If p.supportsService("com.sun.star.text.Paragraph") Then nPara = nPara + 1
+                Loop
+
+            End If
+        Next j
+    Next i
+
+End Sub
